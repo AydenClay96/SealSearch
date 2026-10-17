@@ -12,6 +12,8 @@ import os
 import cv2
 from pathlib import Path
 import numpy as np
+import time
+from matching import create_coat_mask, filter_geometric_matches
 
 
 def split_folders(folder: str, overwrite: bool = False) -> None:
@@ -39,16 +41,16 @@ def remove_background(image):
     return output_rgba
 
 
-def extract_features(image_bgr):
-    """Convert images to grayscale and extract keypoints and descriptors."""
-    image_bgra = remove_background(image_bgr)
-    gray = cv2.cvtColor(image_bgra, cv2.COLOR_BGR2GRAY)
+def extract_features(image_bgr, use_coat_mask: bool = False):
+    """Convert images to grayscale and extract SIFT features."""
+    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
     sift = cv2.SIFT_create()
-    keypoints, descriptors = sift.detectAndCompute(gray,None)
+    mask = create_coat_mask(image_bgr) if use_coat_mask else None
+    keypoints, descriptors = sift.detectAndCompute(gray, mask)
     return keypoints, descriptors, gray
 
-def match_patterns(desc1, desc2) -> None:
-    """Compute similarity between two set of descriptors."""
+def match_patterns(keypoints1, desc1, keypoints2, desc2):
+    """Score descriptor matches that agree on a geometric transformation."""
     if desc1 is None or desc2 is None:
         return 0.0, []
 
@@ -56,14 +58,21 @@ def match_patterns(desc1, desc2) -> None:
     matches = bf.knnMatch(desc1, desc2, k=2)
 
     good_matches = []
-    for m, n in matches:
+    for neighbors in matches:
+        if len(neighbors) < 2:
+            continue
+        m, n = neighbors
         if m.distance < 0.75*n.distance:
-            good_matches.append([m])
+            good_matches.append(m)
+
+    # good_matches = filter_geometric_matches(keypoints1, keypoints2, good_matches)
     score = len(good_matches)
     return score, good_matches
 
-def find_matches(test_img, folder: str = "./reference_seals"):
-    query_kp, query_desc, _ = extract_features(test_img)
+def find_matches(
+    test_img, folder: str = "./reference_seals", use_coat_mask: bool = False
+):
+    query_kp, query_desc, _ = extract_features(test_img, use_coat_mask)
     best_score = -1.0
     for seal_folder in Path(folder).iterdir():
             print(f"Working on {seal_folder}...")
@@ -75,9 +84,11 @@ def find_matches(test_img, folder: str = "./reference_seals"):
                 if ref_img is None:
                     continue
     
-                ref_kp, ref_desc, _ = extract_features(ref_img)
+                ref_kp, ref_desc, _ = extract_features(ref_img, use_coat_mask)
     
-                score, matches = match_patterns(query_desc, ref_desc)
+                score, matches = match_patterns(
+                    query_kp, query_desc, ref_kp, ref_desc
+                )
     
                 if score > best_score:
                     best_score = score
@@ -89,24 +100,28 @@ def find_matches(test_img, folder: str = "./reference_seals"):
 
 def main():
     """ Main function """
-    print("Sorting the image folder!")
-    split_folders("reference_seals/", True)
+    # print("Sorting the image folder!")
+    # split_folders("refer/", True)
 
     print("Loaded user inputted image.")
-    test_img = cv2.imread('ebwolt_ebwolt.jpg')
+    test_img = cv2.imread('cptnul_cptnul.jpg')
 
     best_score, best_name, best_img = find_matches(test_img, "./reference_seals")
 
-    if best_score >= 30.0:
-        print(f"Success! Found a reasonable match!")
-        print(f"Identified seal as: {best_name}")
-        print(f"Confidence level: {best_score}")
-        test_img_norm = cv2.resize(test_img, (500, 500))
-        best_img_norm = cv2.resize(best_img, (500, 500))
-        cat_img = np.concatenate((test_img_norm, best_img_norm), axis=1)
-        cv2.imshow("Image", cat_img)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+    if best_score > 60.0:
+        print(f"Success! Found a reasonable match!")        
+    else:
+        print(f"Failure! No reasonable match found!")
+
+    print(f"Identified seal as: {best_name}")
+    print(f"Geometric inlier count: {best_score}")
+    test_img_norm = cv2.resize(test_img, (500, 500))
+    best_img_norm = cv2.resize(best_img, (500, 500))
+    cat_img = np.concatenate((test_img_norm, best_img_norm), axis=1)
+    cv2.imshow("Image", cat_img)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
 
 if __name__ == "__main__":
     main()
