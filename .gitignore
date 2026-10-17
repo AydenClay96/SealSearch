@@ -13,5 +13,4 @@ wheels/
 /all_seals
 /reference_seals
 /output
-app.py
 /seal_model.pth
