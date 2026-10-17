@@ -104,7 +104,7 @@ def main():
     # split_folders("refer/", True)
 
     print("Loaded user inputted image.")
-    test_img = cv2.imread('cptnul_cptnul.jpg')
+    test_img = cv2.imread('fxhdev_fxhdev.jpg')
 
     best_score, best_name, best_img = find_matches(test_img, "./reference_seals")
 
